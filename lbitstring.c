@@ -23,7 +23,7 @@ static const union {
 #define CHECK_BITSTRING(L, idx)\
 	(*(lbitstring_t **) luaL_checkudata(L, idx, BS_CLS))
 
-#define LUA_BIND_META(L, type_t, ptr, mname) do {                   \
+#define BS_LUA_BIND_META(L, type_t, ptr, mname) do {                   \
 	type_t **my__p = lua_newuserdata(L, sizeof(void *));        \
 	*my__p = ptr;                                               \
 	luaL_getmetatable(L, mname);                                \
@@ -96,7 +96,7 @@ static int lua__bs_new(lua_State *L)
 	size_t len = luaL_checkinteger(L, 1);
 	lbitstring_t *bs = bitstring_alloc(len);
 	bs->len = len;
-	LUA_BIND_META(L, lbitstring_t, bs, BS_CLS);
+	BS_LUA_BIND_META(L, lbitstring_t, bs, BS_CLS);
 	return 1;
 }
 
@@ -123,7 +123,7 @@ static int lua__bs_new_with_array(lua_State *L)
 		i++;
 	}
 	lua_settop(L, top);
-	LUA_BIND_META(L, lbitstring_t, bs, BS_CLS);
+	BS_LUA_BIND_META(L, lbitstring_t, bs, BS_CLS);
 	return 1;
 }
 
@@ -254,7 +254,7 @@ static int lua__bs_load(lua_State *L)
 	bs = bitstring_alloc(len);
 	bs->len = len;
 	memcpy(bs->bitstring, ((lbitstring_t *)bin)->bitstring, bitstr_size(len));
-	LUA_BIND_META(L, lbitstring_t, bs, BS_CLS);
+	BS_LUA_BIND_META(L, lbitstring_t, bs, BS_CLS);
 	return 1;
 }
 
