@@ -116,10 +116,12 @@ static int lua__bs_new_with_array(lua_State *L)
 	lua_pushnil(L);
 	while (lua_next(L, 2) != 0) {
 		uint32_t v = (uint32_t)lua_tointeger(L, -1);
-		v = uint32tolittle(v);
 		size_t left = bitlen - i * sizeof(uint32_t);
+		size_t copy = left > sizeof(uint32_t) ? sizeof(uint32_t) : left;
+		v = uint32tolittle(v);
+
 		lua_pop(L, 1);
-		memcpy((void *)&bs->bitstring[i * sizeof(uint32_t)], &v, left%sizeof(uint32_t));
+		memcpy((void *)&bs->bitstring[i * sizeof(uint32_t)], &v, copy);
 		i++;
 	}
 	lua_settop(L, top);
