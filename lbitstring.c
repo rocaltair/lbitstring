@@ -36,15 +36,16 @@ static const union {
 #define	bitstring_alloc(nbits) \
 	(lbitstring_t *)calloc(1, bitstring_size(nbits))
 
-#define BS_CHECK_ARRAY_LEN(L, idx, rqlen) do {                                                             \
-	size_t len;                                                                                        \
-	int isarray = luac__bs_is_array(L, 2);                                                             \
-	if (isarray) {                                                                                     \
-	        len = lua_objlen(L, 2);                                                                    \
-	}                                                                                                  \
-	if (!isarray || len != rqlen) {                                                                    \
-	        return luaL_error(L, "#%d array(len=%d) required in %s", idx, rqlen, __FUNCTION__);        \
-	}                                                                                                  \
+#define BS_CHECK_ARRAY_LEN(L, idx, rqlen) do {                                 \
+	size_t len = 0;                                                        \
+	int isarray = luac__bs_is_array(L, idx);                               \
+	if (isarray) {                                                         \
+	        len = lua_objlen(L, idx);                                      \
+	}                                                                      \
+	if (!isarray || len != rqlen) {                                        \
+	        return luaL_error(L, "#%d array(%d/%d) required in %s",        \
+                                  idx, len, rqlen, __FUNCTION__);              \
+	}                                                                      \
 } while(0)
 
 static uint32_t uint32tolittle(uint32_t d)
@@ -76,16 +77,31 @@ static int luac__bs_is_array(lua_State *L, int idx)
 	int len = 0; 
 	int top = lua_gettop(L);
 	lua_pushvalue(L, idx);
-	if (!lua_istable(L, -1)) 
+	if (!lua_istable(L, -1))  {
 		goto finished;
+	}
 
 	len = lua_objlen(L, -1); 
-	if (len > 0) { 
+	if (len > 0) {
 		lua_pushnumber(L, len);
-		if (lua_next(L,-2) == 0) { 
-			isarray = 1; 
-		}    
-	}    
+		if (lua_next(L, -2) == 0) {
+			isarray = 1;
+			goto finished;
+		}
+		lua_pop(L, 2);
+		lua_pushnil(L);
+		while (lua_next(L, -2) != 0) {
+			lua_pop(L, 1);
+			if (lua_type(L, -1) != LUA_TNUMBER) {
+				goto finished;
+			} else {
+				if (lua_tonumber(L, -1) > len) {
+					goto finished;
+				}
+			}
+		}
+		isarray = 1;
+	}
 finished:
 	lua_settop(L, top);
 	return isarray;
