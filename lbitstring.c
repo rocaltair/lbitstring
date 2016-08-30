@@ -8,13 +8,13 @@
 #include "bitstring.h"
 
 static const union {
-        char c;
         int i;
-} ENDIAN_DATA = {1};
+        char c;
+} BS_ENDIAN_DATA = {1};
 
-#define IS_LITTLE_ENDIAN (ENDIAN_DATA.i)
+#define IS_LITTLE_ENDIAN (BS_ENDIAN_DATA.c)
 
-#if LUA_VERSION_NUM < 502
+#if LUA_VERSION_NUM < 502 && (!defined(luaL_newlib))
 #  define luaL_newlib(L,l) (lua_newtable(L), luaL_register(L,NULL,l))
 #endif
 
@@ -52,6 +52,7 @@ static uint32_t uint32tolittle(uint32_t d)
 {
 	unsigned char tmp;
 	unsigned char b[sizeof(uint32_t)];
+	uint32_t ret;
 	memcpy(&b, &d, sizeof(d));
 	if (IS_LITTLE_ENDIAN) {
 		return d;
@@ -63,45 +64,46 @@ static uint32_t uint32tolittle(uint32_t d)
 	tmp = b[1];
 	b[1] = b[2];
 	b[2] = tmp;
-	return *(uint32_t *)(&b);
+	ret = *(uint32_t *)(&b);
+	return ret;
 }
 
 typedef struct lbitstring_s {
-	size_t len;
+	uint32_t len;
 	bitstr_t bitstring[0];
 } lbitstring_t;
 
 static int luac__bs_is_array(lua_State *L, int idx) 
 {
+	size_t len = 0; 
 	int isarray = 0; 
-	int len = 0; 
 	int top = lua_gettop(L);
 	lua_pushvalue(L, idx);
-	if (!lua_istable(L, -1))  {
+	if (!lua_istable(L, -1)) {
 		goto finished;
 	}
 
 	len = lua_objlen(L, -1); 
-	if (len > 0) {
-		lua_pushnumber(L, len);
-		if (lua_next(L, -2) == 0) {
-			isarray = 1;
+	if (len == 0) {
+		isarray = 1;
+		goto finished;
+	}
+
+	lua_pushinteger(L, len);
+	if (lua_next(L, -2) == 0) {
+		isarray = 1;
+		goto finished;
+	}
+	lua_pop(L, 2);
+	lua_pushnil(L);
+	while (lua_next(L, -2) != 0) {
+		lua_pop(L, 1);
+		if (lua_type(L, -1) != LUA_TNUMBER || lua_tonumber(L, -1) > len) {
+			isarray = 0;
 			goto finished;
 		}
-		lua_pop(L, 2);
-		lua_pushnil(L);
-		while (lua_next(L, -2) != 0) {
-			lua_pop(L, 1);
-			if (lua_type(L, -1) != LUA_TNUMBER) {
-				goto finished;
-			} else {
-				if (lua_tonumber(L, -1) > len) {
-					goto finished;
-				}
-			}
-		}
-		isarray = 1;
 	}
+	isarray = 1;
 finished:
 	lua_settop(L, top);
 	return isarray;
@@ -111,7 +113,7 @@ static int lua__bs_new(lua_State *L)
 {
 	size_t len = luaL_checkinteger(L, 1);
 	lbitstring_t *bs = bitstring_alloc(len);
-	bs->len = len;
+	bs->len = (uint32_t)len;
 	BS_LUA_BIND_META(L, lbitstring_t, bs, BS_CLS);
 	return 1;
 }
@@ -127,17 +129,18 @@ static int lua__bs_new_with_array(lua_State *L)
 	BS_CHECK_ARRAY_LEN(L, 2, arraylen);
 	top = lua_gettop(L);
 	bs = bitstring_alloc(bitlen);
-	bs->len = bitlen;
+	bs->len = (uint32_t)bitlen;
 
 	lua_pushnil(L);
 	while (lua_next(L, 2) != 0) {
+		uint32_t k;
 		uint32_t v = (uint32_t)lua_tointeger(L, -1);
 		size_t left = bitlen - i * sizeof(uint32_t);
 		size_t copy = left > sizeof(uint32_t) ? sizeof(uint32_t) : left;
 		v = uint32tolittle(v);
-
 		lua_pop(L, 1);
-		memcpy((void *)&bs->bitstring[i * sizeof(uint32_t)], &v, copy);
+		k = (uint32_t)lua_tointeger(L, -1);
+		memcpy((void *)&bs->bitstring[(k - 1) * sizeof(uint32_t)], &v, copy);
 		i++;
 	}
 	lua_settop(L, top);
@@ -164,7 +167,7 @@ static int lua__bs_test(lua_State *L)
 {
 	unsigned char ret;
 	lbitstring_t *bs = CHECK_BITSTRING(L, 1);
-	size_t bit = luaL_checkinteger(L, 2);
+	uint32_t bit = luaL_checkinteger(L, 2);
 
 	luaL_argcheck(L, bit < bs->len && bit >= 0, 2, "len error");
 
@@ -176,7 +179,7 @@ static int lua__bs_test(lua_State *L)
 static int lua__bs_set(lua_State *L)
 {
 	lbitstring_t *bs = CHECK_BITSTRING(L, 1);
-	size_t bit = luaL_checkinteger(L, 2);
+	uint32_t bit = luaL_checkinteger(L, 2);
 
 	luaL_argcheck(L, bit < bs->len && bit >= 0, 2, "len error");
 	bit_set(bs->bitstring, bit);
@@ -186,7 +189,7 @@ static int lua__bs_set(lua_State *L)
 static int lua__bs_clear(lua_State *L)
 {
 	lbitstring_t *bs = CHECK_BITSTRING(L, 1);
-	size_t bit = luaL_checkinteger(L, 2);
+	uint32_t bit = luaL_checkinteger(L, 2);
 	luaL_argcheck(L, bit < bs->len && bit >= 0, 2, "len error");
 	bit_clear(bs->bitstring, bit);
 	return 0;
@@ -195,8 +198,8 @@ static int lua__bs_clear(lua_State *L)
 static int lua__bs_nclear(lua_State * L)
 {
 	lbitstring_t *bs = CHECK_BITSTRING(L, 1);
-	size_t start = luaL_checkinteger(L, 2);
-	size_t stop = luaL_checkinteger(L, 3);
+	int start = (int)luaL_checkinteger(L, 2);
+	int stop = (int)luaL_checkinteger(L, 3);
 	luaL_argcheck(L, start < bs->len && start >= 0, 2, "len error");
 	luaL_argcheck(L, stop < bs->len && stop >= 0 && stop >= start, 3, "len error");
 	bit_nclear(bs->bitstring, start, stop);
@@ -206,8 +209,8 @@ static int lua__bs_nclear(lua_State * L)
 static int lua__bs_nset(lua_State *L)
 {
 	lbitstring_t *bs = CHECK_BITSTRING(L, 1);
-	size_t start = luaL_checkinteger(L, 2);
-	size_t stop = luaL_checkinteger(L, 3);
+	int start = (int)luaL_checkinteger(L, 2);
+	int stop = (int)luaL_checkinteger(L, 3);
 	luaL_argcheck(L, start < bs->len && start >= 0, 2, "len error");
 	luaL_argcheck(L, stop < bs->len && stop >= 0 && stop >= start, 3, "len error");
 	bit_nset(bs->bitstring, start, stop);
@@ -218,7 +221,7 @@ static int lua__bs_ffc(lua_State *L)
 {
 	int ret;
 	lbitstring_t *bs = CHECK_BITSTRING(L, 1);
-	bit_ffc(bs->bitstring, bs->len, &ret);
+	bit_ffc(bs->bitstring, (int)bs->len, &ret);
 	if (ret >= 0) {
 		lua_pushinteger(L, ret);
 		return 1;
@@ -230,7 +233,7 @@ static int lua__bs_ffs(lua_State *L)
 {
 	int ret;
 	lbitstring_t *bs = CHECK_BITSTRING(L, 1);
-	bit_ffs(bs->bitstring, bs->len, &ret);
+	bit_ffs(bs->bitstring, (int)bs->len, &ret);
 	if (ret >= 0) {
 		lua_pushinteger(L, ret);
 		return 1;
@@ -264,13 +267,13 @@ static int lua__bs_load(lua_State *L)
 	size_t len;
 	lbitstring_t *bs = NULL;
 	const char *bin = luaL_checklstring(L, 1, &sz);
-	len = *(size_t *)bin;
+	len = *(uint32_t *)bin;
 	luaL_argcheck(L, bitstring_size(len) == sz, 1, "data error!");
 	/*
 	 * fprintf(stderr, "bs_load,len=%lu,sz=%lu,bslen=%lu\n", len, sz, bitstring_size(len));
 	 */
 	bs = bitstring_alloc(len);
-	bs->len = len;
+	bs->len = (uint32_t)len;
 	memcpy(bs->bitstring, ((lbitstring_t *)bin)->bitstring, bitstr_size(len));
 	BS_LUA_BIND_META(L, lbitstring_t, bs, BS_CLS);
 	return 1;
