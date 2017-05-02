@@ -295,8 +295,7 @@ static int opencls_bitstring(lua_State *L)
 		{NULL, NULL},
 	};
 	luaL_newmetatable(L, BS_CLS);
-	lua_newtable(L);
-	luaL_register(L, NULL, lmethods);
+	luaL_newlib(L, lmethods);
 	lua_setfield(L, -2, "__index");
 	lua_pushcfunction (L, lua__bs_gc);
 	lua_setfield (L, -2, "__gc");
